@@ -1,10 +1,11 @@
+
 import React from 'react';
 import { Category, UserData } from '../types';
 import { CATEGORIES, ACHIEVEMENTS } from '../constants';
 import Mascot from './Mascot';
 
 interface HomeScreenProps {
-  onStartPracticeQuiz: (category: Category) => void;
+  onStartQuiz: (category: Category) => void;
   onStartDailyPuzzle: () => void;
   onShowProgress: () => void;
   userData: UserData;
@@ -17,11 +18,11 @@ const CategoryCard: React.FC<{ category: Category; onSelect: () => void; disable
   <button
     onClick={onSelect}
     disabled={disabled}
-    aria-label={`Start ${category.name} quiz`}
+    aria-label={`Start ${category.name}`}
     className="group bg-white rounded-2xl shadow-lg p-6 flex flex-col items-center text-center w-full max-w-sm transform hover:scale-105 hover:shadow-2xl transition-all duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
   >
     <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-4 transition-transform duration-300 group-hover:rotate-12 ${
-      category.id === 'verbal' ? 'bg-purple-500' : category.id === 'quantitative' ? 'bg-green-500' : 'bg-orange-500'
+      category.id === 'verbal' ? 'bg-purple-500' : category.id === 'quantitative' ? 'bg-green-500' : category.id === 'creative' ? 'bg-teal-500' : 'bg-orange-500'
     }`}>
       {category.icon}
     </div>
@@ -39,7 +40,7 @@ const StreakCounter: React.FC<{ label: string; count: number; icon: string }> = 
 );
 
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onStartPracticeQuiz, onStartDailyPuzzle, onShowProgress, userData, dailyPuzzleCompleted, error, isDataReady }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ onStartQuiz, onStartDailyPuzzle, onShowProgress, userData, dailyPuzzleCompleted, error, isDataReady }) => {
   const totalAchievements = ACHIEVEMENTS.length;
   const unlockedAchievements = userData.unlockedAchievements.length;
 
@@ -92,9 +93,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartPracticeQuiz, onStartDai
       {/* Practice Zone */}
       <div className="mt-12">
         <h2 className="text-3xl font-bold text-gray-700 mb-6">Practice Zone</h2>
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {CATEGORIES.map(category => (
-            <CategoryCard key={category.id} category={category} onSelect={() => onStartPracticeQuiz(category)} disabled={!isDataReady} />
+            <CategoryCard key={category.id} category={category} onSelect={() => onStartQuiz(category)} disabled={!isDataReady} />
           ))}
         </div>
       </div>

@@ -1,4 +1,6 @@
-export type PracticeCategoryId = 'verbal' | 'quantitative' | 'non-verbal';
+
+
+export type PracticeCategoryId = 'verbal' | 'quantitative' | 'non-verbal' | 'creative';
 
 export interface Question {
   question: string;
@@ -25,10 +27,14 @@ export interface UserAnswer {
 }
 
 export enum GameState {
+  GradeSelection = 'gradeSelection',
   Home = 'home',
   Quiz = 'quiz',
   Results = 'results',
   Progress = 'progress',
+  TutorChat = 'tutorChat',
+  CreativeQuiz = 'creativeQuiz',
+  CreativeResult = 'creativeResult',
 }
 
 export interface Achievement {
@@ -39,6 +45,7 @@ export interface Achievement {
 }
 
 export interface UserData {
+  grade: number | null;
   currentStreak: number;
   bestStreak: number;
   lastCompletedDate: string | null; // ISO date string
@@ -47,6 +54,8 @@ export interface UserData {
     verbal: number;
     quantitative: number;
     'non-verbal': number;
+    smart: number;
+    creative: number;
   };
   performance: {
     [subCategory: string]: {
@@ -54,6 +63,8 @@ export interface UserData {
         total: number;
     };
   };
+  perfectScores: number;
+  totalCorrectAnswers: number;
 }
 
 export interface AllQuestions {
@@ -65,4 +76,19 @@ export interface AllQuestions {
 export interface CachedQuestions {
   date: string; // YYYY-MM-DD
   questions: AllQuestions;
+}
+
+export type ChatMessage = { 
+  role: 'user' | 'model'; 
+  text: string; 
+};
+
+export interface CreativeQuestion { 
+  prompt: string; 
+}
+
+export interface CreativeResult {
+  prompt: string;
+  answer: string;
+  feedback: string;
 }

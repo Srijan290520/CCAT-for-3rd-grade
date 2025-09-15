@@ -1,16 +1,21 @@
 
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import HomeScreen from './components/HomeScreen';
 import QuizScreen from './components/QuizScreen';
 import ResultScreen from './components/ResultScreen';
-import { fetchAllCategoryQuestions } from './services/geminiService';
-import { Category, GameState, Question, UserAnswer, AllQuestions, CachedQuestions, Difficulty, Achievement, PracticeCategoryId } from './types';
+import { fetchAllCategoryQuestions, generateCreativePrompt, evaluateCreativeAnswer } from './services/geminiService';
+import { Category, GameState, Question, UserAnswer, AllQuestions, CachedQuestions, Difficulty, Achievement, PracticeCategoryId, CreativeQuestion, CreativeResult } from './types';
 import useUserData from './hooks/useUserData';
 import { isToday, getDayOfYear } from './services/dateUtils';
 import { CATEGORIES, TOTAL_QUESTIONS_PER_QUIZ, ACHIEVEMENTS } from './constants';
 import LoadingSpinner from './components/LoadingSpinner';
 import AchievementNotification from './components/AchievementNotification';
 import ProgressScreen from './components/ProgressScreen';
+import GradeSelectionScreen from './components/GradeSelectionScreen';
+import TutorChatScreen from './components/TutorChatScreen';
+import CreativeQuizScreen from './components/CreativeQuizScreen';
+import CreativeResultScreen from './components/CreativeResultScreen';
 
 // Shuffles an array and returns a new shuffled array
 function shuffleArray<T>(array: T[]): T[] {
@@ -29,31 +34,39 @@ const getDifficultyLevel = (streak: number): Difficulty => {
 };
 
 const App: React.FC = () => {
+  const { userData, setGrade, completeDailyPuzzle, addQuizCompletion, addAchievements, updatePerformance, incrementPerfectScores, addCorrectAnswers } = useUserData();
+
   // Game state
-  const [gameState, setGameState] = useState<GameState>(GameState.Home);
+  const [gameState, setGameState] = useState<GameState>(() => userData.grade ? GameState.Home : GameState.GradeSelection);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
   
   // Data fetching state
   const [allQuestions, setAllQuestions] = useState<AllQuestions | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(!!userData.grade);
   const [error, setError] = useState<string | null>(null);
   
   // Achievement state
   const [showcasedAchievements, setShowcasedAchievements] = useState<Achievement[]>([]);
 
-  // User streak data
-  const { userData, completeDailyPuzzle, addQuizCompletion, addAchievements, updatePerformance } = useUserData();
+  // Feature-specific state
+  const [tutorContext, setTutorContext] = useState<{ question: Question; userAnswer: UserAnswer } | null>(null);
+  const [creativeQuestion, setCreativeQuestion] = useState<CreativeQuestion | null>(null);
+  const [creativeResult, setCreativeResult] = useState<CreativeResult | null>(null);
+  const [isCreativeLoading, setIsCreativeLoading] = useState(false);
 
-  // Load questions on mount
   useEffect(() => {
     const loadQuestions = async () => {
+      if (!userData.grade) {
+        setIsLoading(false);
+        return;
+      }
       setIsLoading(true);
       setError(null);
       const todayStr = new Date().toISOString().split('T')[0];
       const difficulty = getDifficultyLevel(userData.currentStreak);
-      const questionsCacheKey = `ccatDailyQuestionsCache-v3-${difficulty}`;
+      const questionsCacheKey = `ccatDailyQuestionsCache-v4-${userData.grade}-${difficulty}`;
 
       try {
         const cachedDataRaw = localStorage.getItem(questionsCacheKey);
@@ -66,7 +79,7 @@ const App: React.FC = () => {
           }
         }
 
-        const fetchedQuestions = await fetchAllCategoryQuestions(difficulty);
+        const fetchedQuestions = await fetchAllCategoryQuestions(difficulty, userData.grade);
         
         setAllQuestions(fetchedQuestions);
         const newCache: CachedQuestions = { date: todayStr, questions: fetchedQuestions };
@@ -82,27 +95,34 @@ const App: React.FC = () => {
     };
 
     loadQuestions();
-  }, [userData.currentStreak]);
+  }, [userData.currentStreak, userData.grade]);
 
   const score = userAnswers.filter(answer => answer.isCorrect).length;
   const isPracticeQuiz = useMemo(() => currentCategory?.id !== 'daily', [currentCategory]);
   const isDailyPuzzle = useMemo(() => questions.length === 1 && currentCategory?.id === 'daily', [questions, currentCategory]);
   const dailyPuzzleCompleted = useMemo(() => isToday(userData.lastCompletedDate), [userData.lastCompletedDate]);
 
-  // Check for achievements whenever user data changes
   useEffect(() => {
     const checkAndUnlockAchievements = () => {
-        const { currentStreak, quizCompletions, unlockedAchievements } = userData;
+        const { currentStreak, quizCompletions, unlockedAchievements, perfectScores, totalCorrectAnswers } = userData;
         const newAchievements: string[] = [];
 
         // Streak achievements
         if (currentStreak >= 5 && !unlockedAchievements.includes('streak_5')) newAchievements.push('streak_5');
         if (currentStreak >= 15 && !unlockedAchievements.includes('streak_15')) newAchievements.push('streak_15');
+        if (currentStreak >= 30 && !unlockedAchievements.includes('streak_30')) newAchievements.push('streak_30');
 
         // Quiz completion achievements
+        const totalPracticeQuizzes = (quizCompletions.verbal || 0) + (quizCompletions.quantitative || 0) + (quizCompletions['non-verbal'] || 0) + (quizCompletions.smart || 0) + (quizCompletions.creative || 0);
         if (quizCompletions.verbal >= 10 && !unlockedAchievements.includes('verbal_10')) newAchievements.push('verbal_10');
         if (quizCompletions.quantitative >= 10 && !unlockedAchievements.includes('quant_10')) newAchievements.push('quant_10');
         if (quizCompletions['non-verbal'] >= 10 && !unlockedAchievements.includes('nonverbal_10')) newAchievements.push('nonverbal_10');
+        if ((quizCompletions.smart || 0) >= 1 && !unlockedAchievements.includes('smart_learner')) newAchievements.push('smart_learner');
+        if (totalPracticeQuizzes >= 25 && !unlockedAchievements.includes('practice_25')) newAchievements.push('practice_25');
+
+        // Performance achievements
+        if ((perfectScores || 0) >= 5 && !unlockedAchievements.includes('quiz_whiz')) newAchievements.push('quiz_whiz');
+        if ((totalCorrectAnswers || 0) >= 100 && !unlockedAchievements.includes('brainiac_100')) newAchievements.push('brainiac_100');
 
         if (newAchievements.length > 0) {
             addAchievements(newAchievements);
@@ -114,10 +134,24 @@ const App: React.FC = () => {
   }, [userData, addAchievements]);
 
 
-  const handleStartPracticeQuiz = useCallback((category: Category) => {
+  const handleStartQuiz = useCallback(async (category: Category) => {
+    if (category.id === 'creative') {
+        setIsCreativeLoading(true);
+        try {
+            const prompt = await generateCreativePrompt(userData.grade!);
+            setCreativeQuestion(prompt);
+            setGameState(GameState.CreativeQuiz);
+        } catch (error) {
+            setError("Could not start a creative challenge. Please try again.");
+        } finally {
+            setIsCreativeLoading(false);
+        }
+        return;
+    }
+
     if (!allQuestions || category.id === 'daily' || category.id === 'smart') return;
 
-    const questionPool = allQuestions[category.id] || [];
+    const questionPool = allQuestions[category.id as 'verbal' | 'quantitative' | 'non-verbal'] || [];
     const shuffled = shuffleArray(questionPool);
     const quizQuestions = shuffled.slice(0, TOTAL_QUESTIONS_PER_QUIZ);
     
@@ -125,7 +159,7 @@ const App: React.FC = () => {
     setQuestions(quizQuestions);
     setUserAnswers([]);
     setGameState(GameState.Quiz);
-  }, [allQuestions]);
+  }, [allQuestions, userData.grade]);
 
   const handleStartDailyPuzzle = useCallback(() => {
     if (!allQuestions) return;
@@ -137,12 +171,7 @@ const App: React.FC = () => {
     const puzzleIndex = dayOfYear % combinedPool.length;
     const puzzle = combinedPool[puzzleIndex];
 
-    const dailyCategory: Category = {
-      id: 'daily',
-      name: 'Daily Puzzle',
-      description: 'A special challenge for today!',
-      icon: <></>, // Icon not needed for quiz screen title
-    };
+    const dailyCategory: Category = { id: 'daily', name: 'Daily Puzzle', description: '', icon: <></> };
     setCurrentCategory(dailyCategory);
     setQuestions([puzzle]);
     setUserAnswers([]);
@@ -153,44 +182,27 @@ const App: React.FC = () => {
     if (!allQuestions) return;
 
     const allPracticeQuestions = [...allQuestions.verbal, ...allQuestions.quantitative, ...allQuestions['non-verbal']];
-    const { performance } = userData;
-  
-    // Identify weak sub-categories
-    const weakSubCategories = Object.entries(performance)
-      .filter(([, stats]) => stats.total >= 3) // Only consider categories with enough data
-      .map(([subCategory, stats]) => ({
-        subCategory,
-        accuracy: stats.correct / stats.total,
-      }))
-      .sort((a, b) => a.accuracy - b.accuracy)
-      .slice(0, 3) // Target the 3 weakest areas
-      .map(item => item.subCategory);
+    const weakSubCategories = Object.entries(userData.performance)
+      .filter(([, stats]) => stats.total >= 3)
+      .sort((a, b) => (a[1].correct / a[1].total) - (b[1].correct / b[1].total))
+      .slice(0, 3).map(item => item[0]);
   
     let quizQuestions: Question[] = [];
   
     if (weakSubCategories.length > 0) {
-      // Get 3-4 questions from weak areas
       const weakQuestions = shuffleArray(allPracticeQuestions.filter(q => weakSubCategories.includes(q.subCategory))).slice(0, 3);
       quizQuestions.push(...weakQuestions);
     }
   
-    // Fill the rest of the quiz with random questions
     const remainingSlots = TOTAL_QUESTIONS_PER_QUIZ - quizQuestions.length;
     const randomQuestions = shuffleArray(allPracticeQuestions.filter(q => !quizQuestions.some(qq => qq.question === q.question))).slice(0, remainingSlots);
     quizQuestions.push(...randomQuestions);
 
-    // If still not enough, just grab any 5
     if (quizQuestions.length < TOTAL_QUESTIONS_PER_QUIZ) {
         quizQuestions = shuffleArray(allPracticeQuestions).slice(0, TOTAL_QUESTIONS_PER_QUIZ);
     }
   
-    const smartCategory: Category = {
-      id: 'smart',
-      name: 'Smart Practice',
-      description: 'A special quiz focused on your weak spots!',
-      icon: <></>,
-    };
-    
+    const smartCategory: Category = { id: 'smart', name: 'Smart Practice', description: '', icon: <></> };
     setCurrentCategory(smartCategory);
     setQuestions(shuffleArray(quizQuestions));
     setUserAnswers([]);
@@ -206,8 +218,8 @@ const App: React.FC = () => {
   const handleQuizComplete = () => {
     const newAchievements: string[] = [];
 
-    // Update performance stats
     if (isPracticeQuiz) {
+        addCorrectAnswers(score);
         const performanceUpdates = userAnswers.map(answer => ({
             subCategory: questions[answer.questionIndex].subCategory,
             isCorrect: answer.isCorrect,
@@ -215,29 +227,27 @@ const App: React.FC = () => {
         updatePerformance(performanceUpdates);
     }
     
-    if (isDailyPuzzle) {
-      const answer = userAnswers[0];
-      if (answer.isCorrect) {
-        completeDailyPuzzle();
-        if(!userData.unlockedAchievements.includes('daily_puzzle')) {
-            newAchievements.push('daily_puzzle');
-        }
+    if (isDailyPuzzle && userAnswers[0]?.isCorrect) {
+      completeDailyPuzzle();
+      if(!userData.unlockedAchievements.includes('daily_puzzle')) {
+          newAchievements.push('daily_puzzle');
       }
     }
     
     if (isPracticeQuiz) {
-      // FIX: Corrected typing logic to prevent a comparison error.
-      // Instead of an early assertion, we let TypeScript narrow the type of categoryId.
       const categoryId = currentCategory?.id;
-      if (categoryId && (categoryId === 'verbal' || categoryId === 'quantitative' || categoryId === 'non-verbal')) {
+      if (categoryId && (categoryId === 'verbal' || categoryId === 'quantitative' || categoryId === 'non-verbal' || categoryId === 'smart' || categoryId === 'creative')) {
           addQuizCompletion(categoryId);
       }
       const totalQuizzes = Object.values(userData.quizCompletions).reduce((a, b) => a + b, 0);
       if (totalQuizzes === 0 && !userData.unlockedAchievements.includes('first_quiz')) {
         newAchievements.push('first_quiz');
       }
-      if (score === TOTAL_QUESTIONS_PER_QUIZ && !userData.unlockedAchievements.includes('perfect_score')) {
-        newAchievements.push('perfect_score');
+      if (score === TOTAL_QUESTIONS_PER_QUIZ) {
+        incrementPerfectScores();
+        if (!userData.unlockedAchievements.includes('perfect_score')) {
+          newAchievements.push('perfect_score');
+        }
       }
     }
 
@@ -248,9 +258,26 @@ const App: React.FC = () => {
     }
     
     if (isDailyPuzzle) {
-        handlePlayAgain(); // Daily puzzle goes straight home
+        handlePlayAgain();
     } else {
         setGameState(GameState.Results);
+    }
+  };
+
+  const handleCreativeQuizSubmit = async (answer: string) => {
+    if (!creativeQuestion) return;
+    setIsCreativeLoading(true);
+    try {
+        const feedback = await evaluateCreativeAnswer(creativeQuestion.prompt, answer, userData.grade!);
+        setCreativeResult({ prompt: creativeQuestion.prompt, answer, feedback });
+        addQuizCompletion('creative');
+        setGameState(GameState.CreativeResult);
+    } catch (error) {
+        setError("Could not get feedback for your answer. Please try again.");
+        setGameState(GameState.Home); // Go home on error
+    } finally {
+        setIsCreativeLoading(false);
+        setCreativeQuestion(null);
     }
   };
 
@@ -259,14 +286,46 @@ const App: React.FC = () => {
     setQuestions([]);
     setUserAnswers([]);
     setCurrentCategory(null);
+    setCreativeResult(null);
+  };
+  
+  const handleStartTutorChat = (question: Question, userAnswer: UserAnswer) => {
+    setTutorContext({ question, userAnswer });
+    setGameState(GameState.TutorChat);
+  };
+
+  const handleGradeSelect = (grade: number) => {
+    setGrade(grade);
+    setGameState(GameState.Home);
   };
 
   const renderContent = () => {
-    if (isLoading) {
-      return <LoadingSpinner message="Preparing a fresh set of questions for today..." />;
+    if (gameState === GameState.GradeSelection) {
+      return <GradeSelectionScreen onGradeSelect={handleGradeSelect} />;
+    }
+    
+    if (isLoading || isCreativeLoading) {
+      return <LoadingSpinner message={isCreativeLoading ? "Sparking creativity..." : "Preparing questions..."} />;
     }
     
     switch (gameState) {
+      case GameState.TutorChat:
+        return tutorContext && userData.grade ? (
+          <TutorChatScreen
+            questionContext={tutorContext}
+            grade={userData.grade}
+            onBack={() => setGameState(GameState.Results)}
+          />
+        ) : <LoadingSpinner message="Loading tutor..."/>;
+      case GameState.CreativeQuiz:
+        return creativeQuestion ? (
+          <CreativeQuizScreen
+            prompt={creativeQuestion.prompt}
+            onSubmit={handleCreativeQuizSubmit}
+          />
+        ) : <LoadingSpinner message="Loading creative challenge..."/>;
+      case GameState.CreativeResult:
+        return creativeResult && <CreativeResultScreen result={creativeResult} onPlayAgain={handlePlayAgain} />;
       case GameState.Quiz:
         return (
           <QuizScreen
@@ -285,6 +344,7 @@ const App: React.FC = () => {
             questions={questions}
             userAnswers={userAnswers}
             onPlayAgain={handlePlayAgain}
+            onAskTutor={handleStartTutorChat}
           />
         );
       case GameState.Progress:
@@ -299,7 +359,7 @@ const App: React.FC = () => {
       default:
         return (
           <HomeScreen 
-            onStartPracticeQuiz={handleStartPracticeQuiz} 
+            onStartQuiz={handleStartQuiz} 
             onStartDailyPuzzle={handleStartDailyPuzzle}
             onShowProgress={() => setGameState(GameState.Progress)}
             userData={userData}

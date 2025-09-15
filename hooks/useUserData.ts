@@ -1,3 +1,6 @@
+
+
+
 import { useState, useEffect, useCallback } from 'react';
 import { UserData, PracticeCategoryId } from '../types';
 import { isYesterday } from '../services/dateUtils';
@@ -17,13 +20,19 @@ const useUserData = () => {
         const parsed = JSON.parse(savedData);
         // Ensure new fields exist for users with old data
         return {
+            grade: null,
             currentStreak: 0,
             bestStreak: 0,
             lastCompletedDate: null,
             unlockedAchievements: [],
-            quizCompletions: { verbal: 0, quantitative: 0, 'non-verbal': 0 },
             performance: {},
+            perfectScores: 0,
+            totalCorrectAnswers: 0,
             ...parsed,
+            quizCompletions: {
+                verbal: 0, quantitative: 0, 'non-verbal': 0, smart: 0, creative: 0,
+                ...(parsed.quizCompletions || {}),
+            }
         };
       }
     } catch (error) {
@@ -31,12 +40,15 @@ const useUserData = () => {
     }
     // Default state for a new user
     return { 
+      grade: null,
       currentStreak: 0, 
       bestStreak: 0, 
       lastCompletedDate: null,
       unlockedAchievements: [],
-      quizCompletions: { verbal: 0, quantitative: 0, 'non-verbal': 0 },
+      quizCompletions: { verbal: 0, quantitative: 0, 'non-verbal': 0, smart: 0, creative: 0 },
       performance: {},
+      perfectScores: 0,
+      totalCorrectAnswers: 0,
     };
   });
 
@@ -48,6 +60,13 @@ const useUserData = () => {
       console.error("Failed to save user data to localStorage", error);
     }
   }, [userData]);
+
+  const setGrade = useCallback((grade: number) => {
+    setUserData(prevData => ({
+      ...prevData,
+      grade: grade,
+    }));
+  }, []);
 
   const completeDailyPuzzle = useCallback(() => {
     setUserData(prevData => {
@@ -70,7 +89,7 @@ const useUserData = () => {
     });
   }, []);
   
-  const addQuizCompletion = useCallback((categoryId: PracticeCategoryId) => {
+  const addQuizCompletion = useCallback((categoryId: PracticeCategoryId | 'smart') => {
       setUserData(prevData => ({
           ...prevData,
           quizCompletions: {
@@ -107,8 +126,23 @@ const useUserData = () => {
     });
   }, []);
 
+  const incrementPerfectScores = useCallback(() => {
+    setUserData(prevData => ({
+        ...prevData,
+        perfectScores: (prevData.perfectScores || 0) + 1,
+    }));
+  }, []);
 
-  return { userData, completeDailyPuzzle, addQuizCompletion, addAchievements, updatePerformance };
+  const addCorrectAnswers = useCallback((count: number) => {
+    if (count === 0) return;
+    setUserData(prevData => ({
+        ...prevData,
+        totalCorrectAnswers: (prevData.totalCorrectAnswers || 0) + count,
+    }));
+  }, []);
+
+
+  return { userData, setGrade, completeDailyPuzzle, addQuizCompletion, addAchievements, updatePerformance, incrementPerfectScores, addCorrectAnswers };
 };
 
 export default useUserData;

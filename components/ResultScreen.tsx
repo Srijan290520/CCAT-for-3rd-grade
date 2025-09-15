@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import Mascot from './Mascot';
 import { Question, UserAnswer } from '../types';
@@ -9,10 +10,11 @@ interface ResultScreenProps {
   questions: Question[];
   userAnswers: UserAnswer[];
   onPlayAgain: () => void;
+  onAskTutor: (question: Question, userAnswer: UserAnswer) => void;
 }
 
-const AnswerReviewCard: React.FC<{ question: Question; userAnswerIndex: number }> = ({ question, userAnswerIndex }) => {
-  const userAnswer = question.options[userAnswerIndex];
+const AnswerReviewCard: React.FC<{ question: Question; userAnswer: UserAnswer; onAskTutor: () => void }> = ({ question, userAnswer, onAskTutor }) => {
+  const userAnswerText = question.options[userAnswer.answerIndex];
   const correctAnswer = question.options[question.correctAnswerIndex];
 
   return (
@@ -23,7 +25,7 @@ const AnswerReviewCard: React.FC<{ question: Question; userAnswerIndex: number }
         <div>
           <p className="text-sm font-bold text-red-600 mb-1">Your Answer:</p>
           <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800">
-            {question.isImageBased ? <ShapeRenderer description={userAnswer} /> : userAnswer}
+            {question.isImageBased ? <ShapeRenderer description={userAnswerText} /> : userAnswerText}
           </div>
         </div>
         
@@ -35,18 +37,24 @@ const AnswerReviewCard: React.FC<{ question: Question; userAnswerIndex: number }
         </div>
       </div>
 
-      {question.explanation && (
-        <div className="mt-4 bg-blue-50 border border-blue-200 p-4 rounded-lg">
-          <p className="font-bold text-blue-800 flex items-center"><span className="text-xl mr-2">💡</span> Explanation</p>
-          <p className="text-blue-700 mt-1">{question.explanation}</p>
+      <div className="mt-4 bg-blue-50 border border-blue-200 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <p className="font-bold text-blue-800 flex items-center"><span className="text-xl mr-2">💡</span> Explanation</p>
+            <p className="text-blue-700 mt-1">{question.explanation}</p>
         </div>
-      )}
+        <button
+            onClick={onAskTutor}
+            className="bg-blue-500 text-white font-bold py-2 px-4 rounded-full hover:bg-blue-600 transition-transform transform hover:scale-105 shadow-md flex-shrink-0"
+        >
+            Ask Tutor
+        </button>
+      </div>
     </div>
   );
 };
 
 
-const ResultScreen: React.FC<ResultScreenProps> = ({ score, totalQuestions, questions, userAnswers, onPlayAgain }) => {
+const ResultScreen: React.FC<ResultScreenProps> = ({ score, totalQuestions, questions, userAnswers, onPlayAgain, onAskTutor }) => {
   const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
 
   const incorrectAnswers = userAnswers.filter(answer => !answer.isCorrect);
@@ -95,7 +103,8 @@ const ResultScreen: React.FC<ResultScreenProps> = ({ score, totalQuestions, ques
                 <AnswerReviewCard
                   key={answer.questionIndex}
                   question={question}
-                  userAnswerIndex={answer.answerIndex}
+                  userAnswer={answer}
+                  onAskTutor={() => onAskTutor(question, answer)}
                 />
               );
             })}
